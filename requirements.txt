@@ -1,10 +1,13 @@
 ipykernel==7.4.0
 kagglehub==1.0.3
 matplotlib==3.11.2
+nbclient==0.11.0
+nbformat==5.11.1
 numpy==2.5.4
 opencv-python==5.0.0.93
 pandas==3.1.0
 pycocotools==2.0.11
+PyYAML==6.0.3
 scikit-learn==1.9.1
 torch==2.14.1
 torchvision==0.29.1

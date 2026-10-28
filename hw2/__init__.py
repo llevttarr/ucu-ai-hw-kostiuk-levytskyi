@@ -1,1 +1,1 @@
-from .data import CLASSES, DATA, Split, load_image, test_images
+from .data import CLASSES, DATA, Pool, Split, load_holdout, load_image, test_images

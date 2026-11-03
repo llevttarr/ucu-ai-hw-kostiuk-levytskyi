@@ -10,7 +10,7 @@ from hw2.post import Temporal
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("run", help="run folder or ensemble config")
-    p.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
+    p.add_argument("--set", nargs="*", action="extend", default=[], metavar="KEY=VALUE")
     p.add_argument("--temporal", nargs="*", metavar="KEY=VALUE")
     p.add_argument("--out", type=Path)
     args = p.parse_args()

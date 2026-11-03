@@ -136,6 +136,17 @@ def make_holdout(pool, n_val=10, draws=20000, frac=0.15, seed=0):
             "seed": seed}
 
 
+def run_images(pool, cfg, full=False):
+    """Train frames and the per-epoch val frames of a run, val is None when training on all clips."""
+    tr, va = load_holdout()
+    if full:
+        return pool.frames(tr + va), None
+    val = pool.windows(va, every=cfg.get("train_eval_every", 8))
+    if cfg.get("eval_frames"):
+        val = val.groupby("window").head(cfg["eval_frames"]).reset_index(drop=True)
+    return pool.frames(tr), val
+
+
 def load_holdout(path=HOLDOUT):
     with open(path) as f:
         d = json.load(f)

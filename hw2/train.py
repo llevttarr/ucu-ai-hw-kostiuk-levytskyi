@@ -1,4 +1,5 @@
 import math
+import os
 import time
 from pathlib import Path
 
@@ -34,7 +35,8 @@ class Trainer:
         sched = lambda i: (i + 1) / warm if i < warm else lr_min + (1 - lr_min) * 0.5 * (
             1 + math.cos(math.pi * (i - warm) / max(1, self.iters - warm)))
         self.sched = torch.optim.lr_scheduler.LambdaLR(self.opt, sched)
-        self.scaler = torch.amp.GradScaler(enabled=torch.cuda.is_available())
+        self.amp = torch.cuda.is_available() and c.get("amp", True)
+        self.scaler = torch.amp.GradScaler(enabled=self.amp)
         self.epoch, self.best = 0, -1.0
 
     def state(self):
@@ -73,7 +75,7 @@ class Trainer:
             for it, (imgs, tgts) in enumerate(loader(self.ds, c["batch"], c.get("workers", 4), self.sampler)):
                 imgs = [x.to(dev, non_blocking=True) for x in imgs]
                 tgts = [{k: v.to(dev) if torch.is_tensor(v) else v for k, v in d.items()} for d in tgts]
-                with torch.autocast(dev.type, enabled=dev.type == "cuda"):
+                with torch.autocast(dev.type, enabled=self.amp):
                     losses = model(imgs, tgts)
                 loss = sum(losses.values())
                 if not torch.isfinite(loss):
@@ -109,5 +111,6 @@ class Trainer:
             print(" ".join(f"{k} {v}" for k, v in row.items()), flush=True)
             log_row(self.out / "log.csv", row)
             self.epoch += 1
-            torch.save(self.state(), self.out / "last.pt")
+            torch.save(self.state(), self.out / "last.tmp")
+            os.replace(self.out / "last.tmp", self.out / "last.pt")
         return self.best

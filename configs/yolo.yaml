@@ -5,6 +5,7 @@ size: 1536
 train_size: 1280
 export_size: 1536
 tile: 0
+export_degrade: 0.2
 step: 4
 epochs: 60
 batch: 8

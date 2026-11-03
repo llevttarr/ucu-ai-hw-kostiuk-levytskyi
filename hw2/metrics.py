@@ -3,6 +3,7 @@ import io
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pandas as pd
 import torch
@@ -62,10 +63,13 @@ class Evaluator:
         return {k: round(float(v), 4) for k, v in res.items()}
 
 
-def predict_frames(det, images, root, batch=4, workers=4):
-    """Predictions {image_id: (N, 6)} for the images rows and model-only frames per second."""
+def predict_frames(det, images, root, batch=4, workers=4, downscale=1.0):
+    """Predictions {image_id: (N, 6)} and model-only fps, on frames optionally shrunk by downscale."""
     preds, spent = {}, 0.0
     for idx, frames in iterate_frames(images, root, batch, workers):
+        if downscale != 1:
+            frames = [cv2.resize(f, None, fx=downscale, fy=downscale, interpolation=cv2.INTER_AREA)
+                      for f in frames]
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         t = time.time()
@@ -74,6 +78,9 @@ def predict_frames(det, images, root, batch=4, workers=4):
             torch.cuda.synchronize()
         spent += time.time() - t
         for i, p in zip(idx, out):
+            if downscale != 1:
+                p = p.copy()
+                p[:, :4] /= downscale
             preds[images.at[i, "image_id"]] = p
     return preds, len(images) / max(spent, 1e-9)
 
@@ -116,9 +123,9 @@ def log_row(path, row):
     pd.DataFrame([row]).to_csv(path, mode="a", header=not path.exists(), index=False)
 
 
-def evaluate(det, pool, images, temporal=None, batch=4, workers=4):
+def evaluate(det, pool, images, temporal=None, batch=4, workers=4, downscale=1.0):
     """Scores, model frames per second and predictions of a detector on pool frames, optionally rescored."""
-    preds, fps = predict_frames(det, images, pool.root, batch, workers)
+    preds, fps = predict_frames(det, images, pool.root, batch, workers, downscale)
     if temporal is not None:
         preds = by_window(images, preds, temporal)
     return Evaluator(pool, images).score(preds), fps, preds

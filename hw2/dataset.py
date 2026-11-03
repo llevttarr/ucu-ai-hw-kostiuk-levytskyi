@@ -35,6 +35,13 @@ class Boxes:
         ok = (area >= keep * xywh[:, 2] * xywh[:, 3]) & (x2 - x1 >= 2) & (y2 - y1 >= 2)
         return np.stack([x1, y1, x2 - x1, y2 - y1], 1)[ok], cls[ok]
 
+def degrade(img, rng, lo=0.4, hi=0.7):
+    H, W = img.shape[:2]
+    k = rng.uniform(lo, hi)
+    small = cv2.resize(img, (round(W * k), round(H * k)), interpolation=cv2.INTER_AREA)
+    return cv2.resize(small, (W, H), interpolation=cv2.INTER_LINEAR)
+
+
 def resize_long(img, side):
     s = side / max(img.shape[:2])
     if s == 1:
@@ -79,9 +86,7 @@ class FrameDataset(torch.utils.data.Dataset):
     def augment(self, img, xywh, cls, rng):
         H, W = img.shape[:2]
         if rng.random() < self.degrade:
-            k = rng.uniform(0.4, 0.7)
-            small = cv2.resize(img, (round(W * k), round(H * k)), interpolation=cv2.INTER_AREA)
-            img = cv2.resize(small, (W, H), interpolation=cv2.INTER_LINEAR)
+            img = degrade(img, rng)
         if self.crop:
             cw, ch = min(self.crop, W), min(self.crop, H)
             if len(xywh) and rng.random() < self.focus:
@@ -160,12 +165,15 @@ def tiles(W, H, tile, overlap):
         return np.linspace(0, n - tile, k).round().astype(int).tolist()
     return [(x, y) for y in starts(H) for x in starts(W)]
 
-def export_yolo(pool, parts, out, size=1536, tile=0, overlap=0.2, workers=6):
+def export_yolo(pool, parts, out, size=1536, tile=0, overlap=0.2, degrade_p=0.0, seed=0, workers=6):
     out = Path(out)
 
     def write(name, row):
         img, xywh, cls = prepare(pool, row)
         img, s = resize_long(img, size)
+        rng = np.random.default_rng([seed, row.image_id])
+        if name == "train" and rng.random() < degrade_p:
+            img = degrade(img, rng)
         xywh = xywh * s
         H, W = img.shape[:2]
         crops = tiles(W, H, tile, overlap) if tile else [(0, 0)]

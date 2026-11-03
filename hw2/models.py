@@ -1,3 +1,4 @@
+import os
 from functools import partial
 from pathlib import Path
 
@@ -8,7 +9,9 @@ import yaml
 from .dataset import export_yolo, resize_long
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-WEIGHTS = Path(__file__).resolve().parents[1] / "runs/weights"
+ROOT = Path(__file__).resolve().parents[1]
+WEIGHTS = ROOT / "runs/weights"
+YOLO_DATA = Path(os.environ.get("HW2_YOLO", ROOT / "data/yolo"))
 
 
 class Anchors:
@@ -87,7 +90,7 @@ class TorchDetector(Detector):
         self.model.eval()
         ims, scales = zip(*(resize_long(f, self.size) for f in frames))
         x = [torch.from_numpy(im).to(DEVICE).permute(2, 0, 1).float().div(255) for im in ims]
-        with torch.autocast(DEVICE, enabled=DEVICE == "cuda"):
+        with torch.autocast(DEVICE, enabled=DEVICE == "cuda" and self.cfg.get("amp", True)):
             out = self.model(x)
         res = []
         for o, s in zip(out, scales):
@@ -170,24 +173,19 @@ class UltraDetector(Detector):
         WEIGHTS.mkdir(parents=True, exist_ok=True)
         return str(WEIGHTS / name)
 
-    def dataset(self, pool, train_images, val_images):
-        c = self.cfg
-        name = f"s{c['export_size']}_t{c.get('tile', 0)}_k{c['step']}" + ("_full" if val_images is None else "")
-        out = Path(c.get("dataset_root", "data/yolo")) / name
-        if not (out / "data.yaml").exists():
-            parts = {"train": train_images[(train_images["frame"] - 1) % c["step"] == 0]}
-            if val_images is not None:
-                parts["val"] = val_images
-            export_yolo(pool, parts, out, size=c["export_size"], tile=c.get("tile", 0))
-        return out / "data.yaml"
-
     def fit(self, pool, train_images, val_images, out):
         c, out = self.cfg, Path(out)
-        data = self.dataset(pool, train_images, val_images)
-        self.model.train(data=str(data), epochs=c["epochs"], imgsz=c["train_size"], batch=c["batch"],
-                         project=str(out.parent.resolve()), name=out.name, exist_ok=True,
-                         workers=c.get("workers", 4), seed=c.get("seed", 0), deterministic=False,
-                         val=val_images is not None, max_det=500, **c.get("train", {}))
+        last = out / "weights/last.pt"
+        if last.exists():
+            print(f"resuming {last}")
+            self.model = self.make(last)
+            self.model.train(resume=True)
+        else:
+            data = yolo_dataset(c, pool, train_images, val_images)
+            self.model.train(data=str(data), epochs=c["epochs"], imgsz=c["train_size"], batch=c["batch"],
+                             project=str(out.parent.resolve()), name=out.name, exist_ok=True,
+                             workers=c.get("workers", 4), seed=c.get("seed", 0), deterministic=False,
+                             val=val_images is not None, max_det=500, **c.get("train", {}))
         self.save(out)
 
     @torch.no_grad()
@@ -272,10 +270,25 @@ def build(cfg, pool=None, images=None):
     return MODELS[cfg["model"]](cfg, pool, images)
 
 
+def yolo_dataset(cfg, pool, train_images, val_images):
+    """Ultralytics dataset of a config, exported on first use and shared by runs with the same export."""
+    c = cfg
+    d = round(100 * c.get("export_degrade", 0))
+    name = f"s{c['export_size']}_t{c.get('tile', 0)}_k{c['step']}_d{d}"
+    name += "_full" if val_images is None else ""
+    out = Path(c.get("dataset_root", YOLO_DATA)) / name
+    if not (out / "data.yaml").exists():
+        parts = {"train": train_images[(train_images["frame"] - 1) % c["step"] == 0]}
+        if val_images is not None:
+            parts["val"] = val_images
+        export_yolo(pool, parts, out, size=c["export_size"], tile=c.get("tile", 0),
+                    degrade_p=c.get("export_degrade", 0), seed=c.get("seed", 0))
+    return out / "data.yaml"
+
+
 def load_run(run, **override):
     """Trained detector from a run folder with its config.yaml and best.pt."""
-    cfg = yaml.safe_load((Path(run) / "config.yaml").read_text())
-    cfg.update(override)
+    cfg = merge(yaml.safe_load((Path(run) / "config.yaml").read_text()), override)
     if cfg["model"] in ("frcnn", "retinanet"):
         cfg["pretrained"] = False
     return build(cfg).load(run)

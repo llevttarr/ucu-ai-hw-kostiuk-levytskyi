@@ -1,0 +1,32 @@
+model: retinanet
+size: 1536
+crop: 800
+step: 4
+epochs: 12
+batch: 4
+optimizer: sgd
+lr: 0.01
+weight_decay: 0.0001
+warmup: 500
+anchors: default
+focal_alpha: 0.25
+focal_gamma: 2.0
+freeze_bn: true
+repeat: 0
+workers: 4
+eval_batch: 4
+
+augment:
+  jitter: [0.75, 1.25]
+  degrade: 0.2
+  flip: 0.5
+  focus: 0.7
+  color: 0.2
+
+params:
+  fg_iou_thresh: 0.5
+  bg_iou_thresh: 0.4
+  topk_candidates: 1000
+  score_thresh: 0.001
+  nms_thresh: 0.5
+  detections_per_img: 500

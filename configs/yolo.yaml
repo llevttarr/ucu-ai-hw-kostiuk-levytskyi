@@ -1,0 +1,22 @@
+model: yolo
+weights: yolo26s.pt
+arch: null
+size: 1536
+train_size: 1280
+export_size: 1536
+tile: 0
+step: 4
+epochs: 60
+batch: 8
+workers: 4
+eval_batch: 8
+nms: 0.7
+
+train:
+  optimizer: auto
+  cos_lr: true
+  close_mosaic: 10
+  mosaic: 1.0
+  scale: 0.5
+  fliplr: 0.5
+  patience: 0

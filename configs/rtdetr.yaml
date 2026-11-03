@@ -1,0 +1,21 @@
+model: rtdetr
+weights: rtdetr-l.pt
+size: 1280
+train_size: 1024
+export_size: 1536
+tile: 0
+step: 4
+epochs: 40
+batch: 4
+workers: 4
+eval_batch: 4
+
+train:
+  optimizer: AdamW
+  lr0: 0.0001
+  warmup_epochs: 1
+  cos_lr: true
+  close_mosaic: 5
+  scale: 0.5
+  fliplr: 0.5
+  patience: 0

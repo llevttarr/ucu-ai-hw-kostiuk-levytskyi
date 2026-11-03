@@ -5,15 +5,13 @@ import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch, Rectangle
 
-from .data import CLASSES, VISDRONE
+from .data import CLASSES
 
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 SPLIT_COLORS = {"train": COLORS[0], "val": COLORS[1], "test": COLORS[2]}
 BLUES = LinearSegmentedColormap.from_list(
     "blues", ["#f7f6f3", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 MUTED = "#8a8980"
-SIZE_BINS = [0, 8, 16, 32, 96, np.inf]
-SIZE_LABELS = ["<8", "8-16", "16-32", "32-96", ">96"]
 
 def iou_matrix(a, b):
     x1 = np.maximum(a[:, None, 0], b[None, :, 0])
@@ -45,24 +43,6 @@ class Stats:
         return df.astype({c: "Int64" for c in ("boxes", "obj/frame max")})
 
     @staticmethod
-    def clips(split):
-        im, b = split.images, split.boxes
-        g = im.groupby("clip")
-        df = pd.DataFrame({
-            "frames": g.size(),
-            "res": g.apply(lambda d: f"{d['width'].iat[0]}x{d['height'].iat[0]}"),
-            "obj/frame": g["n_obj"].mean().round(1),
-            "obj max": g["n_obj"].max(),
-            "ignore frames": g["n_ignore"].apply(lambda n: (n > 0).mean()).round(2),
-        })
-        bg = b.groupby("clip")
-        df["median px"] = bg["size"].median().round(1)
-        df["<32 px"] = bg["size"].apply(lambda s: (s < 32).mean()).round(2)
-        top = b.groupby("clip")["cls"].value_counts(normalize=True).groupby(level=0).head(1)
-        df["top class"] = pd.Series({c: f"{CLASSES[k]} {v:.2f}" for (c, k), v in top.items()})
-        return df
-
-    @staticmethod
     def resolutions(splits, test):
         parts = [s.images.drop_duplicates("clip").assign(split=s.name) for s in splits]
         parts.append(test.drop_duplicates("clip").assign(split="test"))
@@ -83,28 +63,6 @@ class Stats:
         for s in splits:
             df[f"{s.name} share"] = (df[s.name] / df[s.name].sum()).round(4)
         return df
-
-    @staticmethod
-    def class_by_clip(splits):
-        b = pd.concat([s.boxes.assign(clip=s.name + "/" + s.boxes["clip"]) for s in splits])
-        df = pd.crosstab(b["clip"], b["cls"], normalize="index")
-        return df.reindex(columns=range(len(CLASSES)), fill_value=0).set_axis(CLASSES, axis=1)
-
-    @staticmethod
-    def merges(split):
-        b = pd.concat([split.boxes[["orig", "cls"]], split.ignore[["orig"]].assign(cls=-1)])
-        names = b["cls"].map(lambda c: "ignore" if c < 0 else CLASSES[c])
-        return pd.crosstab(b["orig"].map(lambda o: VISDRONE[o]), names)
-
-    @staticmethod
-    def size_bins(boxes, col="size"):
-        bins = pd.cut(boxes[col], SIZE_BINS, labels=SIZE_LABELS, right=False)
-        names = boxes["cls"].map(lambda c: CLASSES[c])
-        df = pd.crosstab(names, bins, normalize="index").reindex(columns=SIZE_LABELS, fill_value=0)
-        df.loc["all"] = bins.value_counts(normalize=True).reindex(SIZE_LABELS)
-        df = df.round(3)
-        df["count"] = names.value_counts().reindex(df.index).fillna(len(boxes)).astype(int)
-        return df.reindex([c for c in CLASSES if c in df.index] + ["all"])
 
     @staticmethod
     def scaled(boxes, long_side):
@@ -299,20 +257,6 @@ class Plot:
         ax.legend(ncol=2, fontsize=8, loc="lower right")
 
     @staticmethod
-    def heatmap(df, ax, annotate=None, fmt="{:.2f}", vmax=None):
-        im = ax.imshow(df.to_numpy(dtype=float), cmap=BLUES, aspect="auto", vmin=0, vmax=vmax)
-        ax.set_xticks(range(df.shape[1]), df.columns, rotation=45, ha="right")
-        ax.set_yticks(range(df.shape[0]), df.index, fontsize=7 if df.shape[0] > 30 else 9)
-        ax.grid(False)
-        if annotate if annotate is not None else df.size <= 120:
-            v = df.to_numpy(dtype=float)
-            hi = np.nanmax(v) if vmax is None else vmax
-            for i, j in np.ndindex(v.shape):
-                ax.text(j, i, fmt.format(v[i, j]), ha="center", va="center", fontsize=7,
-                        color="white" if v[i, j] > 0.6 * hi else "#2b2b28")
-        plt.colorbar(im, ax=ax, fraction=0.03)
-
-    @staticmethod
     def per_clip(images, col, ax, ylabel):
         order = images.groupby("clip")[col].median().sort_values().index
         data = [images.loc[images["clip"] == c, col] for c in order]
@@ -333,16 +277,6 @@ class Plot:
                 density=density)
         if log:
             ax.set_yscale("log")
-
-    @staticmethod
-    def centers(boxes, ax, bins=60, title=None):
-        """2d histogram of box centres in normalised image coordinates."""
-        h, _, _ = np.histogram2d(boxes["cy"], boxes["cx"], bins=bins, range=[[0, 1], [0, 1]])
-        h = h / h.sum()
-        im = ax.imshow(h, cmap=BLUES, extent=[0, 1, 1, 0], vmax=np.quantile(h[h > 0], 0.99))
-        ax.set_title(title or "")
-        ax.grid(False)
-        plt.colorbar(im, ax=ax, fraction=0.046)
 
     @staticmethod
     def frame(split, image_id, ax, crop=None, title=None):

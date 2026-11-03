@@ -1,0 +1,10 @@
+model: ensemble
+size: 1536
+fuse_iou: 0.6
+workers: 4
+eval_batch: 4
+
+members:
+  - run: runs/yolo_p2
+    sizes: [1280, 1536, 1920]
+    flip: true

@@ -5,6 +5,10 @@ workers: 4
 eval_batch: 4
 
 members:
-  - run: runs/yolo_p2
-    sizes: [1280, 1536, 1920]
+  - run: runs/frcnn_anchors
+    sizes: [1536]
+    flip: true
+    weight: 2
+  - run: runs/yolo_1280
+    sizes: [1280, 1536]
     flip: true
